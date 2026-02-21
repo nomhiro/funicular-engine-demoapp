@@ -298,6 +298,12 @@
         const halfT = thickness / 2;
         const groundY = flipY(h - 20);
 
+        // Determine which endpoints are ceiling anchors (walls/pillars only at ceiling)
+        const startAnchor = anchors.find(a => a.id === chain.startId);
+        const endAnchor = anchors.find(a => a.id === chain.endId);
+        const startIsCeiling = startAnchor && startAnchor.type === 'ceiling';
+        const endIsCeiling = endAnchor && endAnchor.type === 'ceiling';
+
         // Build inner and outer edge paths (offset from center curve by normals)
         const inner = [];
         const outer = [];
@@ -336,62 +342,70 @@
 
         if (structureOpts.walls) {
             // --- Draw wall fill from arch down to ground ---
+            // Only draw walls at ceiling anchors, not at chain-points
             ctx.save();
             ctx.globalAlpha = flipProgress;
 
-            // Left wall: from left anchor down to ground
-            const leftOuterX = outer[0].x;
-            const leftInnerX = inner[0].x;
-            const leftTopOuter = outer[0].y;
-            const leftTopInner = inner[0].y;
+            if (startIsCeiling) {
+                // Left wall: from left anchor down to ground
+                const leftOuterX = outer[0].x;
+                const leftInnerX = inner[0].x;
+                const leftTopOuter = outer[0].y;
+                const leftTopInner = inner[0].y;
 
-            ctx.beginPath();
-            ctx.moveTo(leftOuterX, leftTopOuter);
-            ctx.lineTo(leftOuterX, groundY);
-            ctx.lineTo(leftInnerX, groundY);
-            ctx.lineTo(leftInnerX, leftTopInner);
-            ctx.closePath();
-            ctx.fillStyle = colors.fill;
-            ctx.fill();
-            ctx.strokeStyle = colors.stroke;
-            ctx.lineWidth = 1;
-            ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(leftOuterX, leftTopOuter);
+                ctx.lineTo(leftOuterX, groundY);
+                ctx.lineTo(leftInnerX, groundY);
+                ctx.lineTo(leftInnerX, leftTopInner);
+                ctx.closePath();
+                ctx.fillStyle = colors.fill;
+                ctx.fill();
+                ctx.strokeStyle = colors.stroke;
+                ctx.lineWidth = 1;
+                ctx.stroke();
 
-            // Right wall
-            const ri = pts.length - 1;
-            const rightOuterX = outer[ri].x;
-            const rightInnerX = inner[ri].x;
-            const rightTopOuter = outer[ri].y;
-            const rightTopInner = inner[ri].y;
-
-            ctx.beginPath();
-            ctx.moveTo(rightOuterX, rightTopOuter);
-            ctx.lineTo(rightOuterX, groundY);
-            ctx.lineTo(rightInnerX, groundY);
-            ctx.lineTo(rightInnerX, rightTopInner);
-            ctx.closePath();
-            ctx.fillStyle = colors.fill;
-            ctx.fill();
-            ctx.strokeStyle = colors.stroke;
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // Stone texture on walls
-            if (structureOpts.stone) {
-                drawStoneTexture(leftOuterX, leftInnerX, Math.min(leftTopOuter, leftTopInner), groundY, colors);
-                drawStoneTexture(rightInnerX, rightOuterX, Math.min(rightTopOuter, rightTopInner), groundY, colors);
+                if (structureOpts.stone) {
+                    drawStoneTexture(leftOuterX, leftInnerX, Math.min(leftTopOuter, leftTopInner), groundY, colors);
+                }
+                if (structureOpts.windows) {
+                    const leftWallHeight = groundY - Math.min(leftTopOuter, leftTopInner);
+                    const wallWidth = Math.abs(leftOuterX - leftInnerX);
+                    if (leftWallHeight > 60 && wallWidth > 6) {
+                        drawWindowOnWall((leftOuterX + leftInnerX) / 2, Math.min(leftTopOuter, leftTopInner) + leftWallHeight * 0.35, wallWidth * 0.5, leftWallHeight * 0.25, colors);
+                    }
+                }
             }
 
-            // Windows on walls
-            if (structureOpts.windows) {
-                const leftWallHeight = groundY - Math.min(leftTopOuter, leftTopInner);
-                const rightWallHeight = groundY - Math.min(rightTopOuter, rightTopInner);
-                const wallWidth = Math.abs(leftOuterX - leftInnerX);
-                if (leftWallHeight > 60 && wallWidth > 6) {
-                    drawWindowOnWall((leftOuterX + leftInnerX) / 2, Math.min(leftTopOuter, leftTopInner) + leftWallHeight * 0.35, wallWidth * 0.5, leftWallHeight * 0.25, colors);
+            if (endIsCeiling) {
+                // Right wall
+                const ri = pts.length - 1;
+                const rightOuterX = outer[ri].x;
+                const rightInnerX = inner[ri].x;
+                const rightTopOuter = outer[ri].y;
+                const rightTopInner = inner[ri].y;
+
+                ctx.beginPath();
+                ctx.moveTo(rightOuterX, rightTopOuter);
+                ctx.lineTo(rightOuterX, groundY);
+                ctx.lineTo(rightInnerX, groundY);
+                ctx.lineTo(rightInnerX, rightTopInner);
+                ctx.closePath();
+                ctx.fillStyle = colors.fill;
+                ctx.fill();
+                ctx.strokeStyle = colors.stroke;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                if (structureOpts.stone) {
+                    drawStoneTexture(rightInnerX, rightOuterX, Math.min(rightTopOuter, rightTopInner), groundY, colors);
                 }
-                if (rightWallHeight > 60 && wallWidth > 6) {
-                    drawWindowOnWall((rightOuterX + rightInnerX) / 2, Math.min(rightTopOuter, rightTopInner) + rightWallHeight * 0.35, wallWidth * 0.5, rightWallHeight * 0.25, colors);
+                if (structureOpts.windows) {
+                    const rightWallHeight = groundY - Math.min(rightTopOuter, rightTopInner);
+                    const wallWidth = Math.abs(rightOuterX - rightInnerX);
+                    if (rightWallHeight > 60 && wallWidth > 6) {
+                        drawWindowOnWall((rightOuterX + rightInnerX) / 2, Math.min(rightTopOuter, rightTopInner) + rightWallHeight * 0.35, wallWidth * 0.5, rightWallHeight * 0.25, colors);
+                    }
                 }
             }
 
@@ -440,10 +454,10 @@
 
         ctx.restore();
 
-        // --- Pillars at endpoints ---
+        // --- Pillars at endpoints (only at ceiling anchors) ---
         if (structureOpts.pillars) {
-            drawPillar(outer[0], inner[0], groundY, colors, 'left');
-            drawPillar(outer[outer.length - 1], inner[inner.length - 1], groundY, colors, 'right');
+            if (startIsCeiling) drawPillar(outer[0], inner[0], groundY, colors, 'left');
+            if (endIsCeiling) drawPillar(outer[outer.length - 1], inner[inner.length - 1], groundY, colors, 'right');
         }
     }
 
