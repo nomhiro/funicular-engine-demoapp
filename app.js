@@ -50,10 +50,7 @@
     // =========================================================================
 
     const structureOpts = {
-        walls: true,
-        pillars: true,
         stone: false,
-        windows: false,
         wallThickness: 16,
         wallColor: 'sandstone',
         ground: true
@@ -296,25 +293,6 @@
         const colors = getColors();
         const thickness = structureOpts.wallThickness * flipProgress;
         const halfT = thickness / 2;
-        const groundY = flipY(h - 20);
-
-        // Determine which endpoints are ceiling anchors (walls/pillars only at ceiling)
-        const startAnchor = anchors.find(a => a.id === chain.startId);
-        const endAnchor = anchors.find(a => a.id === chain.endId);
-
-        // Only draw walls/pillars at a ceiling anchor that is a terminal endpoint
-        // of the overall structure (connected to exactly one chain).
-        // Interior junctions (shared by 2+ chains) should not have walls.
-        function isTerminalCeiling(anchor) {
-            if (!anchor || anchor.type !== 'ceiling') return false;
-            let count = 0;
-            for (const c of chains) {
-                if (c.startId === anchor.id || c.endId === anchor.id) count++;
-            }
-            return count === 1;
-        }
-        const startIsTerminal = isTerminalCeiling(startAnchor);
-        const endIsTerminal = isTerminalCeiling(endAnchor);
 
         // Build inner and outer edge paths (offset from center curve by normals)
         const inner = [];
@@ -350,78 +328,6 @@
 
             outer.push({ x: cx + nx * halfT, y: cy + ny * halfT });
             inner.push({ x: cx - nx * halfT, y: cy - ny * halfT });
-        }
-
-        if (structureOpts.walls) {
-            // --- Draw wall fill from arch down to ground ---
-            // Only draw walls at ceiling anchors, not at chain-points
-            ctx.save();
-            ctx.globalAlpha = flipProgress;
-
-            if (startIsTerminal) {
-                // Left wall: from left anchor down to ground
-                const leftOuterX = outer[0].x;
-                const leftInnerX = inner[0].x;
-                const leftTopOuter = outer[0].y;
-                const leftTopInner = inner[0].y;
-
-                ctx.beginPath();
-                ctx.moveTo(leftOuterX, leftTopOuter);
-                ctx.lineTo(leftOuterX, groundY);
-                ctx.lineTo(leftInnerX, groundY);
-                ctx.lineTo(leftInnerX, leftTopInner);
-                ctx.closePath();
-                ctx.fillStyle = colors.fill;
-                ctx.fill();
-                ctx.strokeStyle = colors.stroke;
-                ctx.lineWidth = 1;
-                ctx.stroke();
-
-                if (structureOpts.stone) {
-                    drawStoneTexture(leftOuterX, leftInnerX, Math.min(leftTopOuter, leftTopInner), groundY, colors);
-                }
-                if (structureOpts.windows) {
-                    const leftWallHeight = groundY - Math.min(leftTopOuter, leftTopInner);
-                    const wallWidth = Math.abs(leftOuterX - leftInnerX);
-                    if (leftWallHeight > 60 && wallWidth > 6) {
-                        drawWindowOnWall((leftOuterX + leftInnerX) / 2, Math.min(leftTopOuter, leftTopInner) + leftWallHeight * 0.35, wallWidth * 0.5, leftWallHeight * 0.25, colors);
-                    }
-                }
-            }
-
-            if (endIsTerminal) {
-                // Right wall
-                const ri = pts.length - 1;
-                const rightOuterX = outer[ri].x;
-                const rightInnerX = inner[ri].x;
-                const rightTopOuter = outer[ri].y;
-                const rightTopInner = inner[ri].y;
-
-                ctx.beginPath();
-                ctx.moveTo(rightOuterX, rightTopOuter);
-                ctx.lineTo(rightOuterX, groundY);
-                ctx.lineTo(rightInnerX, groundY);
-                ctx.lineTo(rightInnerX, rightTopInner);
-                ctx.closePath();
-                ctx.fillStyle = colors.fill;
-                ctx.fill();
-                ctx.strokeStyle = colors.stroke;
-                ctx.lineWidth = 1;
-                ctx.stroke();
-
-                if (structureOpts.stone) {
-                    drawStoneTexture(rightInnerX, rightOuterX, Math.min(rightTopOuter, rightTopInner), groundY, colors);
-                }
-                if (structureOpts.windows) {
-                    const rightWallHeight = groundY - Math.min(rightTopOuter, rightTopInner);
-                    const wallWidth = Math.abs(rightOuterX - rightInnerX);
-                    if (rightWallHeight > 60 && wallWidth > 6) {
-                        drawWindowOnWall((rightOuterX + rightInnerX) / 2, Math.min(rightTopOuter, rightTopInner) + rightWallHeight * 0.35, wallWidth * 0.5, rightWallHeight * 0.25, colors);
-                    }
-                }
-            }
-
-            ctx.restore();
         }
 
         // --- Draw the arch body (thick curved wall) ---
@@ -466,46 +372,6 @@
 
         ctx.restore();
 
-        // --- Pillars at endpoints (only at ceiling anchors) ---
-        if (structureOpts.pillars) {
-            if (startIsTerminal) drawPillar(outer[0], inner[0], groundY, colors, 'left');
-            if (endIsTerminal) drawPillar(outer[outer.length - 1], inner[inner.length - 1], groundY, colors, 'right');
-        }
-    }
-
-    function drawStoneTexture(x1, x2, topY, bottomY, colors) {
-        const left = Math.min(x1, x2);
-        const right = Math.max(x1, x2);
-        const width = right - left;
-        if (width < 3) return;
-
-        ctx.save();
-        ctx.strokeStyle = colors.joint;
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.4 * flipProgress;
-
-        const rowHeight = 12;
-        let row = 0;
-        for (let y = topY + 4; y < bottomY - 4; y += rowHeight) {
-            // Horizontal joint
-            ctx.beginPath();
-            ctx.moveTo(left + 1, y);
-            ctx.lineTo(right - 1, y);
-            ctx.stroke();
-
-            // Vertical joints (staggered)
-            const offset = (row % 2) * (width * 0.4);
-            for (let x = left + offset; x < right; x += width * 0.7) {
-                if (x > left + 2 && x < right - 2) {
-                    ctx.beginPath();
-                    ctx.moveTo(x, y);
-                    ctx.lineTo(x, Math.min(y + rowHeight, bottomY - 2));
-                    ctx.stroke();
-                }
-            }
-            row++;
-        }
-        ctx.restore();
     }
 
     function drawArchStoneTexture(outer, inner, colors) {
@@ -522,91 +388,6 @@
             ctx.lineTo(inner[i].x, inner[i].y);
             ctx.stroke();
         }
-
-        ctx.restore();
-    }
-
-    function drawPillar(outerPt, innerPt, groundY, colors, side) {
-        ctx.save();
-        ctx.globalAlpha = flipProgress;
-
-        const pillarWidth = Math.abs(outerPt.x - innerPt.x) + 8;
-        const centerX = (outerPt.x + innerPt.x) / 2;
-        const topY = Math.min(outerPt.y, innerPt.y);
-        const left = centerX - pillarWidth / 2;
-
-        // Pillar body
-        const pillarGrad = ctx.createLinearGradient(left, 0, left + pillarWidth, 0);
-        pillarGrad.addColorStop(0, colors.dark);
-        pillarGrad.addColorStop(0.3, colors.light);
-        pillarGrad.addColorStop(0.7, colors.fill);
-        pillarGrad.addColorStop(1, colors.dark);
-        ctx.fillStyle = pillarGrad;
-        ctx.fillRect(left, topY, pillarWidth, groundY - topY);
-
-        // Pillar outline
-        ctx.strokeStyle = colors.stroke;
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(left, topY, pillarWidth, groundY - topY);
-
-        // Capital (top ornament)
-        const capH = 6;
-        const capW = pillarWidth + 6;
-        ctx.fillStyle = colors.light;
-        ctx.fillRect(centerX - capW / 2, topY - capH, capW, capH);
-        ctx.strokeStyle = colors.stroke;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(centerX - capW / 2, topY - capH, capW, capH);
-
-        // Base ornament
-        const baseH = 6;
-        const baseW = pillarWidth + 6;
-        ctx.fillStyle = colors.light;
-        ctx.fillRect(centerX - baseW / 2, groundY, baseW, baseH);
-        ctx.strokeStyle = colors.stroke;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(centerX - baseW / 2, groundY, baseW, baseH);
-
-        // Stone texture on pillar
-        if (structureOpts.stone) {
-            drawStoneTexture(left, left + pillarWidth, topY, groundY, colors);
-        }
-
-        ctx.restore();
-    }
-
-    function drawWindowOnWall(cx, cy, winW, winH, colors) {
-        ctx.save();
-        ctx.globalAlpha = flipProgress;
-
-        const hw = winW / 2;
-        const hh = winH / 2;
-        const archRadius = hw;
-
-        // Window opening (dark)
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy + hh);
-        ctx.lineTo(cx - hw, cy - hh + archRadius);
-        ctx.arc(cx, cy - hh + archRadius, archRadius, Math.PI, 0);
-        ctx.lineTo(cx + hw, cy + hh);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(10, 15, 30, 0.85)';
-        ctx.fill();
-
-        // Window frame
-        ctx.strokeStyle = colors.dark;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // Light glow inside
-        ctx.save();
-        ctx.globalAlpha = 0.15;
-        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(hw, hh));
-        glow.addColorStop(0, '#ffe8a0');
-        glow.addColorStop(1, 'transparent');
-        ctx.fillStyle = glow;
-        ctx.fill();
-        ctx.restore();
 
         ctx.restore();
     }
@@ -1284,20 +1065,8 @@
     // Structure Options Controls
     // =========================================================================
 
-    document.getElementById('opt-walls').addEventListener('change', (e) => {
-        structureOpts.walls = e.target.checked;
-        render();
-    });
-    document.getElementById('opt-pillars').addEventListener('change', (e) => {
-        structureOpts.pillars = e.target.checked;
-        render();
-    });
     document.getElementById('opt-stone').addEventListener('change', (e) => {
         structureOpts.stone = e.target.checked;
-        render();
-    });
-    document.getElementById('opt-windows').addEventListener('change', (e) => {
-        structureOpts.windows = e.target.checked;
         render();
     });
     document.getElementById('opt-wall-thickness').addEventListener('input', (e) => {
