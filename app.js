@@ -1034,6 +1034,80 @@
         document.getElementById('structure-options').classList.toggle('hidden', !isFlipped);
     }
 
+    // Make structure-options panel draggable via its summary header
+    (function initDraggablePanel() {
+        const panel = document.getElementById('structure-options');
+        const details = panel.querySelector('details');
+        const handle = details.querySelector('summary');
+        let panelDrag = null; // { startX, startY, origLeft, origTop, moved }
+        const DRAG_THRESHOLD = 4; // px before considering it a drag
+
+        function startDrag(clientX, clientY) {
+            const rect = panel.getBoundingClientRect();
+            panelDrag = {
+                startX: clientX,
+                startY: clientY,
+                origLeft: rect.left,
+                origTop: rect.top,
+                moved: false
+            };
+        }
+
+        // Intercept click on summary: only toggle if not dragged
+        handle.addEventListener('click', (e) => {
+            if (panelDrag && panelDrag.moved) {
+                e.preventDefault();
+            }
+        });
+
+        handle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            startDrag(e.clientX, e.clientY);
+        });
+
+        handle.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            startDrag(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: true });
+
+        function onMove(clientX, clientY) {
+            if (!panelDrag) return;
+            const dx = clientX - panelDrag.startX;
+            const dy = clientY - panelDrag.startY;
+
+            if (!panelDrag.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+            panelDrag.moved = true;
+
+            const container = document.getElementById('canvas-container');
+            const containerRect = container.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+
+            // Clamp within canvas-container
+            let newLeft = panelDrag.origLeft + dx - containerRect.left;
+            let newTop = panelDrag.origTop + dy - containerRect.top;
+            newLeft = Math.max(0, Math.min(newLeft, containerRect.width - panelRect.width));
+            newTop = Math.max(0, Math.min(newTop, containerRect.height - panelRect.height));
+
+            panel.style.left = newLeft + 'px';
+            panel.style.top = newTop + 'px';
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            if (!panelDrag) return;
+            onMove(e.clientX, e.clientY);
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!panelDrag) return;
+            onMove(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: true });
+
+        document.addEventListener('mouseup', () => { panelDrag = null; });
+        document.addEventListener('touchend', () => { panelDrag = null; });
+    })();
+
     document.getElementById('btn-flip').addEventListener('click', () => {
         isFlipped = !isFlipped;
         flipProgress = isFlipped ? 1 : 0;

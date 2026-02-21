@@ -274,6 +274,7 @@ header .subtitle {
     border-radius: 6px;
     padding: 10px;
     z-index: 10;
+    user-select: none;
 }
 
 #structure-options.hidden {
@@ -283,10 +284,14 @@ header .subtitle {
 #structure-options details summary {
     font-size: 0.85rem;
     color: #4ecdc4;
-    cursor: pointer;
+    cursor: grab;
     padding-bottom: 4px;
     border-bottom: 1px solid #333;
     list-style: none;
+}
+
+#structure-options details summary:active {
+    cursor: grabbing;
 }
 
 #structure-options details summary::before {
@@ -415,8 +420,8 @@ header .subtitle {
         top: 8px;
         bottom: auto;
         left: 8px;
-        right: 8px;
-        width: auto;
+        right: auto;
+        width: 200px;
     }
 
     .prop-row input[type="range"] {
