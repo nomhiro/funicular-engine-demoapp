@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>フニクラ実験 - ガウディの逆さ吊り設計シミュレーター</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>フニクラ実験シミュレーター</h1>
+            <p class="subtitle">アントニ・ガウディの逆さ吊り設計手法</p>
+        </header>
+
+        <div id="toolbar">
+            <div class="tool-group">
+                <span class="group-label">モード</span>
+                <button id="btn-add-anchor" class="tool-btn active" title="天井に固定点を追加">
+                    <span class="icon">⊕</span> 固定点追加
+                </button>
+                <button id="btn-add-chain" class="tool-btn" title="2点間にチェーンを追加">
+                    <span class="icon">⛓</span> チェーン追加
+                </button>
+                <button id="btn-add-weight" class="tool-btn" title="チェーンに重りを追加">
+                    <span class="icon">⚖</span> 重り追加
+                </button>
+                <button id="btn-select" class="tool-btn" title="点を選択して移動・編集">
+                    <span class="icon">✋</span> 選択/移動
+                </button>
+            </div>
+
+            <div class="tool-group">
+                <span class="group-label">表示</span>
+                <button id="btn-flip" class="tool-btn flip-btn" title="反転して建築構造を表示">
+                    <span class="icon">↕</span> 反転表示
+                </button>
+                <button id="btn-animate-flip" class="tool-btn" title="反転アニメーション">
+                    <span class="icon">▶</span> アニメーション
+                </button>
+            </div>
+
+            <div class="tool-group">
+                <span class="group-label">操作</span>
+                <button id="btn-clear" class="tool-btn danger" title="全てクリア">
+                    <span class="icon">🗑</span> クリア
+                </button>
+                <button id="btn-demo" class="tool-btn" title="デモデータを読み込み">
+                    <span class="icon">📐</span> デモ
+                </button>
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="main-canvas"></canvas>
+            <div id="ceiling-label" class="canvas-label">▼ 天井 (固定点をここに配置)</div>
+            <div id="floor-label" class="canvas-label hidden">▲ 地面</div>
+            <div id="mode-indicator">設計モード</div>
+        </div>
+
+        <div id="properties-panel" class="hidden">
+            <h3>プロパティ</h3>
+            <div id="props-content"></div>
+        </div>
+
+        <div id="info-panel">
+            <details>
+                <summary>使い方</summary>
+                <div class="info-content">
+                    <h4>設計フェーズ</h4>
+                    <ol>
+                        <li><strong>固定点追加</strong>: 天井（上部）をクリックして固定点を配置</li>
+                        <li><strong>チェーン追加</strong>: 2つの点をクリックしてチェーン（鎖）を接続。既存チェーン上の点も選択可能</li>
+                        <li><strong>重り追加</strong>: チェーン上をクリックして重りを配置。重力で曲線が変化</li>
+                        <li><strong>選択/移動</strong>: 固定点をドラッグで移動。点を選択してプロパティを編集</li>
+                    </ol>
+                    <h4>構造表示</h4>
+                    <p>「反転表示」で上下を反転し、懸垂線がアーチ構造に変わる様子を確認できます。</p>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <script src="catenary.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
