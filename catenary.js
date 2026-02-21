@@ -96,7 +96,6 @@ const CatenaryEngine = (() => {
         // catenary: Y(X) = a * cosh((X - x0) / a) + y0
         // We work in a local coordinate where X goes from 0 to dh (horizontal span)
         const dh = Math.abs(dx);
-        const sign = dx > 0 ? 1 : -1;
 
         // Solve for x0: the x-position of the catenary minimum
         // From boundary conditions:
@@ -113,37 +112,17 @@ const CatenaryEngine = (() => {
             x0 = dh / 2;
         }
 
-        const y0 = -a * Math.cosh((0 - x0) / a);
+        // Generate points: parameterize by t from p1 to p2
+        // localX always goes from 0 to dh (positive direction)
+        // y0_at_p1 anchors the catenary so that Y(0) = 0 (relative to p1.y)
+        const y0_at_p1 = -a * Math.cosh(-x0 / a);
 
         const pts = [];
         for (let i = 0; i <= numPoints; i++) {
             const t = i / numPoints;
+            const px = p1.x + dx * t;
             const localX = t * dh;
-            const localY = a * Math.cosh((localX - x0) / a) + y0;
-
-            let px, py;
-            if (dx > 0) {
-                px = p1.x + localX;
-                py = p1.y + localY;
-            } else {
-                px = p1.x - localX;
-                py = p1.y + localY; // localY is relative, adjusted for the reversed direction
-                // Need to recalculate for negative dx
-                px = p1.x - sign * localX; // This simplifies
-                // Actually let's do it properly
-                px = p1.x + (dx > 0 ? localX : -localX);
-                py = p1.y + (dx > 0 ? localY : localY);
-            }
-            // Simpler: parameterize by t along horizontal
-            px = p1.x + dx * t;
-            const lx = t * dh;
-            py = p1.y + (a * Math.cosh((lx - x0) / a) + y0);
-            if (dx < 0) {
-                // Mirror the local x
-                const lxMirror = (1 - t) * dh;
-                py = p2.y + (a * Math.cosh((lxMirror - x0) / a) + y0);
-            }
-
+            const py = p1.y + (a * Math.cosh((localX - x0) / a) + y0_at_p1);
             pts.push({ x: px, y: py });
         }
 
@@ -171,8 +150,9 @@ const CatenaryEngine = (() => {
     }
 
     /**
-     * Simulate a chain with multiple weights using iterative relaxation.
-     * This treats the chain as a series of connected segments with point masses.
+     * Simulate a chain with multiple weights using position-based relaxation.
+     * Uses static equilibrium solving (no velocity accumulation) for stable,
+     * natural catenary curves.
      *
      * anchor1, anchor2: {x, y} fixed endpoints
      * weights: [{position: 0-1 along chain, mass: number}]
@@ -182,20 +162,23 @@ const CatenaryEngine = (() => {
      * Returns array of {x, y} points for rendering.
      */
     function simulateChainWithWeights(anchor1, anchor2, chainLength, weights, gravity = 0.5, iterations = 80) {
-        const numSegments = 50;
+        const numSegments = 60;
         const segLength = chainLength / numSegments;
         const dx = anchor2.x - anchor1.x;
         const dy = anchor2.y - anchor1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Initialize particle positions along a straight line
+        // Initialize with parabolic sag (close to catenary) for fast convergence
         const particles = [];
+        const slack = Math.max(0, chainLength - dist);
+        const sag = slack * 0.4;
+
         for (let i = 0; i <= numSegments; i++) {
             const t = i / numSegments;
+            const sagAmount = sag * 4 * t * (1 - t); // parabolic approximation
             particles.push({
                 x: anchor1.x + dx * t,
-                y: anchor1.y + dy * t,
-                oldX: anchor1.x + dx * t,
-                oldY: anchor1.y + dy * t,
+                y: anchor1.y + dy * t + sagAmount,
                 pinned: (i === 0 || i === numSegments),
                 mass: 1.0
             });
@@ -211,35 +194,29 @@ const CatenaryEngine = (() => {
             }
         }
 
-        // Verlet integration with constraint solving
+        // Position-based relaxation (no velocity — avoids oscillation)
+        const gravityStep = gravity * 0.08;
+
         for (let iter = 0; iter < iterations; iter++) {
-            // Apply gravity
+            // Small gravity nudge each iteration
             for (const p of particles) {
                 if (p.pinned) continue;
-
-                const vx = (p.x - p.oldX) * 0.99; // damping
-                const vy = (p.y - p.oldY) * 0.99;
-
-                p.oldX = p.x;
-                p.oldY = p.y;
-
-                p.x += vx;
-                p.y += vy + gravity * p.mass * 0.1;
+                p.y += gravityStep * p.mass;
             }
 
-            // Distance constraints
-            for (let c = 0; c < 5; c++) {
+            // Distance constraint solving (many passes for accuracy)
+            for (let c = 0; c < 10; c++) {
                 for (let i = 0; i < numSegments; i++) {
                     const a = particles[i];
                     const b = particles[i + 1];
 
                     const ddx = b.x - a.x;
                     const ddy = b.y - a.y;
-                    const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                    const currentDist = Math.sqrt(ddx * ddx + ddy * ddy);
 
-                    if (dist < 0.001) continue;
+                    if (currentDist < 0.001) continue;
 
-                    const diff = (segLength - dist) / dist;
+                    const diff = (segLength - currentDist) / currentDist;
                     const offsetX = ddx * diff * 0.5;
                     const offsetY = ddy * diff * 0.5;
 
