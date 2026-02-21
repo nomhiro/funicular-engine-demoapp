@@ -59,6 +59,8 @@ const CatenaryEngine = (() => {
     /**
      * Generate catenary points between two endpoints.
      * p1 and p2 are {x, y} where y increases downward (screen coords).
+     * The hanging catenary uses: y = -a * cosh((x - x0) / a) + C
+     * so the curve sags downward (positive y) between the endpoints.
      * Returns array of {x, y} points.
      */
     function generateCatenaryPoints(p1, p2, length, numPoints = 40) {
@@ -81,7 +83,14 @@ const CatenaryEngine = (() => {
             return generateVerticalCatenary(p1, p2, length, numPoints);
         }
 
-        const { a, valid } = solveCatenaryParam(dx, dy, length);
+        // Work in a left-to-right coordinate system for the catenary math
+        const goingRight = dx >= 0;
+        const left = goingRight ? p1 : p2;
+        const right = goingRight ? p2 : p1;
+        const dh = right.x - left.x; // always positive
+        const dv = right.y - left.y; // positive = right endpoint is lower
+
+        const { a, valid } = solveCatenaryParam(dh, dv, length);
 
         if (!valid) {
             const pts = [];
@@ -92,37 +101,25 @@ const CatenaryEngine = (() => {
             return pts;
         }
 
-        // Find the x-offset and y-offset for the catenary
-        // catenary: Y(X) = a * cosh((X - x0) / a) + y0
-        // We work in a local coordinate where X goes from 0 to dh (horizontal span)
-        const dh = Math.abs(dx);
-
-        // Solve for x0: the x-position of the catenary minimum
-        // From boundary conditions:
-        // cosh((0 - x0)/a) and cosh((dh - x0)/a) give the two endpoints
-        // The difference in Y must equal dy (considering sign)
-        const dyAdjusted = (dx > 0) ? dy : -dy;
-
-        // x0 = dh/2 - a * arcsinh(dyAdjusted / (2 * a * sinh(dh/(2*a))))
+        // Solve for x0 (catenary lowest point) in local coords (0 to dh)
         const sinhTerm = Math.sinh(dh / (2 * a));
-        let x0;
+        let x0Local = dh / 2;
         if (Math.abs(sinhTerm) > 1e-10) {
-            x0 = dh / 2 - a * Math.asinh(dyAdjusted / (2 * a * sinhTerm));
-        } else {
-            x0 = dh / 2;
+            x0Local = dh / 2 - a * Math.asinh(dv / (2 * a * sinhTerm));
         }
 
-        // Generate points: parameterize by t from p1 to p2
-        // localX always goes from 0 to dh (positive direction)
-        // y0_at_p1 anchors the catenary so that Y(0) = 0 (relative to p1.y)
-        const y0_at_p1 = -a * Math.cosh(-x0 / a);
+        // Absolute x position of catenary vertex
+        const x0 = left.x + x0Local;
 
+        // C from left boundary: left.y = -a * cosh((left.x - x0)/a) + C
+        const C = left.y + a * Math.cosh((left.x - x0) / a);
+
+        // Generate points from p1 to p2
         const pts = [];
         for (let i = 0; i <= numPoints; i++) {
             const t = i / numPoints;
             const px = p1.x + dx * t;
-            const localX = t * dh;
-            const py = p1.y + (a * Math.cosh((localX - x0) / a) + y0_at_p1);
+            const py = -a * Math.cosh((px - x0) / a) + C;
             pts.push({ x: px, y: py });
         }
 
@@ -151,8 +148,7 @@ const CatenaryEngine = (() => {
 
     /**
      * Simulate a chain with multiple weights using position-based relaxation.
-     * Uses static equilibrium solving (no velocity accumulation) for stable,
-     * natural catenary curves.
+     * Uses iterative Verlet-like relaxation for stable, natural catenary curves.
      *
      * anchor1, anchor2: {x, y} fixed endpoints
      * weights: [{position: 0-1 along chain, mass: number}]
@@ -162,50 +158,59 @@ const CatenaryEngine = (() => {
      * Returns array of {x, y} points for rendering.
      */
     function simulateChainWithWeights(anchor1, anchor2, chainLength, weights, gravity = 0.5, iterations = 80) {
+        // If no weights, use the analytical catenary for a perfect curve
+        if (!weights || weights.length === 0) {
+            return generateCatenaryPoints(anchor1, anchor2, chainLength, 60);
+        }
+
         const numSegments = 60;
         const segLength = chainLength / numSegments;
         const dx = anchor2.x - anchor1.x;
         const dy = anchor2.y - anchor1.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Initialize with parabolic sag (close to catenary) for fast convergence
+        // Initialize positions along straight line
         const particles = [];
-        const slack = Math.max(0, chainLength - dist);
-        const sag = slack * 0.4;
-
         for (let i = 0; i <= numSegments; i++) {
             const t = i / numSegments;
-            const sagAmount = sag * 4 * t * (1 - t); // parabolic approximation
             particles.push({
                 x: anchor1.x + dx * t,
-                y: anchor1.y + dy * t + sagAmount,
+                y: anchor1.y + dy * t,
+                prevX: anchor1.x + dx * t,
+                prevY: anchor1.y + dy * t,
                 pinned: (i === 0 || i === numSegments),
                 mass: 1.0
             });
         }
 
         // Add extra mass at weight positions
-        if (weights && weights.length > 0) {
-            for (const w of weights) {
-                const idx = Math.round(w.position * numSegments);
-                if (idx > 0 && idx < numSegments) {
-                    particles[idx].mass += w.mass;
-                }
+        for (const w of weights) {
+            const idx = Math.round(w.position * numSegments);
+            if (idx > 0 && idx < numSegments) {
+                particles[idx].mass += w.mass;
             }
         }
 
-        // Position-based relaxation (no velocity — avoids oscillation)
-        const gravityStep = gravity * 0.08;
+        // Verlet integration with many constraint passes
+        const dt = 0.016;
+        const gForce = gravity * 200;
+        const damping = 0.99;
+        const constraintPasses = 15;
 
         for (let iter = 0; iter < iterations; iter++) {
-            // Small gravity nudge each iteration
+            // Verlet integration step
             for (const p of particles) {
                 if (p.pinned) continue;
-                p.y += gravityStep * p.mass;
+                const vx = (p.x - p.prevX) * damping;
+                const vy = (p.y - p.prevY) * damping;
+                p.prevX = p.x;
+                p.prevY = p.y;
+                p.x += vx;
+                p.y += vy + gForce * p.mass * dt * dt;
             }
 
-            // Distance constraint solving (many passes for accuracy)
-            for (let c = 0; c < 10; c++) {
+            // Distance constraint solving
+            for (let c = 0; c < constraintPasses; c++) {
                 for (let i = 0; i < numSegments; i++) {
                     const a = particles[i];
                     const b = particles[i + 1];
@@ -217,16 +222,17 @@ const CatenaryEngine = (() => {
                     if (currentDist < 0.001) continue;
 
                     const diff = (segLength - currentDist) / currentDist;
-                    const offsetX = ddx * diff * 0.5;
-                    const offsetY = ddy * diff * 0.5;
+                    const totalMass = a.mass + b.mass;
+                    const ratioA = a.pinned ? 0 : (b.pinned ? 1 : b.mass / totalMass);
+                    const ratioB = b.pinned ? 0 : (a.pinned ? 1 : a.mass / totalMass);
 
                     if (!a.pinned) {
-                        a.x -= offsetX;
-                        a.y -= offsetY;
+                        a.x -= ddx * diff * ratioA;
+                        a.y -= ddy * diff * ratioA;
                     }
                     if (!b.pinned) {
-                        b.x += offsetX;
-                        b.y += offsetY;
+                        b.x += ddx * diff * ratioB;
+                        b.y += ddy * diff * ratioB;
                     }
                 }
 
