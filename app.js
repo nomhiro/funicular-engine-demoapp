@@ -40,7 +40,8 @@
 
     let selectedAnchor = null;
     let chainStartAnchor = null; // First anchor selected in chain-add mode
-    let dragging = null;
+    let dragging = null;         // anchor being dragged
+    let draggingChain = null;    // { chain, startY, startLength } for chain stretch
     let wasDragging = false;
     let hoveredAnchor = null;
     let hoveredChainInfo = null; // { chainId, position, point }
@@ -582,8 +583,17 @@
                 selectedAnchor = anchor.id;
                 showProperties(anchor);
             } else {
-                selectedAnchor = null;
-                hideProperties();
+                // Check if clicking on a chain to drag-stretch it
+                const chainPt = findNearestChainPoint(pos);
+                if (chainPt) {
+                    const chain = chains.find(c => c.id === chainPt.chainId);
+                    if (chain) {
+                        draggingChain = { chain, startY: pos.y, startLength: chain.length };
+                    }
+                } else {
+                    selectedAnchor = null;
+                    hideProperties();
+                }
             }
             render();
         }
@@ -601,8 +611,8 @@
             hoveredAnchor = nearAnchor.id;
         }
 
-        // Check for chain hover in chain-add or weight mode
-        if (mode === 'add-chain' || mode === 'add-weight') {
+        // Check for chain hover
+        if (mode === 'add-chain' || mode === 'add-weight' || mode === 'select') {
             if (!nearAnchor) {
                 const chainPt = findNearestChainPoint(pos);
                 if (chainPt) {
@@ -611,7 +621,7 @@
             }
         }
 
-        // Handle dragging
+        // Handle anchor dragging
         if (dragging) {
             const worldPos = screenToWorld(pos);
             dragging.x = worldPos.x;
@@ -620,11 +630,29 @@
             recomputeAllChains();
         }
 
+        // Handle chain stretch dragging
+        if (draggingChain) {
+            const dy = pos.y - draggingChain.startY;
+            // Pull down = longer (in normal view), pull up = shorter
+            const delta = isFlipped ? -dy : dy;
+            const p1 = getAnchorPosition(draggingChain.chain.startId);
+            const p2 = getAnchorPosition(draggingChain.chain.endId);
+            const minLen = p1 && p2
+                ? Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2) * 1.01
+                : 10;
+            draggingChain.chain.length = Math.max(minLen, draggingChain.startLength + delta * 2);
+            recomputeChain(draggingChain.chain);
+        }
+
         // Update cursor
-        if (nearAnchor && mode === 'select') {
+        if (draggingChain) {
+            canvas.style.cursor = 'ns-resize';
+        } else if (nearAnchor && mode === 'select') {
             canvas.style.cursor = 'grab';
         } else if (nearAnchor && mode === 'add-chain') {
             canvas.style.cursor = 'pointer';
+        } else if (hoveredChainInfo && mode === 'select') {
+            canvas.style.cursor = 'ns-resize';
         } else if (hoveredChainInfo) {
             canvas.style.cursor = 'pointer';
         } else {
@@ -638,6 +666,11 @@
         if (dragging) {
             wasDragging = true;
             dragging = null;
+            render();
+        }
+        if (draggingChain) {
+            wasDragging = true;
+            draggingChain = null;
             render();
         }
     });
@@ -1216,8 +1249,17 @@
                 selectedAnchor = anchor.id;
                 showProperties(anchor);
             } else {
-                selectedAnchor = null;
-                hideProperties();
+                // Check if touching a chain to drag-stretch it
+                const chainPt = findNearestChainPoint(pos);
+                if (chainPt) {
+                    const chain = chains.find(c => c.id === chainPt.chainId);
+                    if (chain) {
+                        draggingChain = { chain, startY: pos.y, startLength: chain.length };
+                    }
+                } else {
+                    selectedAnchor = null;
+                    hideProperties();
+                }
             }
             render();
         }
@@ -1235,6 +1277,17 @@
             dragging.y = Math.max(CEILING_Y - 10, dragging.y);
             recomputeAllChains();
             render();
+        } else if (draggingChain) {
+            const dy = pos.y - draggingChain.startY;
+            const delta = isFlipped ? -dy : dy;
+            const p1 = getAnchorPosition(draggingChain.chain.startId);
+            const p2 = getAnchorPosition(draggingChain.chain.endId);
+            const minLen = p1 && p2
+                ? Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2) * 1.01
+                : 10;
+            draggingChain.chain.length = Math.max(minLen, draggingChain.startLength + delta * 2);
+            recomputeChain(draggingChain.chain);
+            render();
         }
     }, { passive: false });
 
@@ -1244,6 +1297,13 @@
 
         if (dragging) {
             dragging = null;
+            render();
+            touchStartPos = null;
+            return;
+        }
+
+        if (draggingChain) {
+            draggingChain = null;
             render();
             touchStartPos = null;
             return;
