@@ -46,9 +46,10 @@
     let hoveredChainInfo = null; // { chainId, position, point }
 
     const CEILING_Y = 50;        // Y position of the ceiling line
-    const ANCHOR_RADIUS = 8;
-    const SNAP_DISTANCE = 15;
-    const CHAIN_SNAP_DISTANCE = 12;
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const ANCHOR_RADIUS = isTouchDevice ? 12 : 8;
+    const SNAP_DISTANCE = isTouchDevice ? 30 : 15;
+    const CHAIN_SNAP_DISTANCE = isTouchDevice ? 25 : 12;
 
     // =========================================================================
     // Canvas Setup
@@ -984,6 +985,98 @@
         recomputeAllChains();
         render();
     }
+
+    // =========================================================================
+    // Touch Events (Mobile Support)
+    // =========================================================================
+
+    let touchStartPos = null;
+    let touchMoved = false;
+
+    function getTouchPos(e) {
+        const touch = e.touches[0] || e.changedTouches[0];
+        const rect = canvas.getBoundingClientRect();
+        return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    }
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const pos = getTouchPos(e);
+        touchStartPos = pos;
+        touchMoved = false;
+
+        if (mode === 'select') {
+            const anchor = findNearestAnchor(pos, 30);
+            if (anchor && anchor.type === 'ceiling') {
+                dragging = anchor;
+                selectedAnchor = anchor.id;
+                showProperties(anchor);
+            } else if (anchor) {
+                selectedAnchor = anchor.id;
+                showProperties(anchor);
+            } else {
+                selectedAnchor = null;
+                hideProperties();
+            }
+            render();
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const pos = getTouchPos(e);
+        touchMoved = true;
+
+        if (dragging) {
+            const worldPos = screenToWorld(pos);
+            dragging.x = worldPos.x;
+            dragging.y = Math.min(worldPos.y, CEILING_Y + 30);
+            dragging.y = Math.max(CEILING_Y - 10, dragging.y);
+            recomputeAllChains();
+            render();
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        const pos = getTouchPos(e);
+
+        if (dragging) {
+            dragging = null;
+            render();
+            touchStartPos = null;
+            return;
+        }
+
+        // Only treat as tap if finger didn't move much
+        if (touchMoved && touchStartPos) {
+            const dx = pos.x - touchStartPos.x;
+            const dy = pos.y - touchStartPos.y;
+            if (Math.sqrt(dx * dx + dy * dy) > 15) {
+                touchStartPos = null;
+                return;
+            }
+        }
+
+        // Treat as a click/tap
+        const worldPos = screenToWorld(pos);
+        switch (mode) {
+            case 'add-anchor':
+                handleAddAnchor(worldPos, pos);
+                break;
+            case 'add-chain':
+                handleAddChain(pos, worldPos);
+                break;
+            case 'add-weight':
+                handleAddWeight(pos);
+                break;
+            case 'select':
+                // Already handled in touchstart
+                break;
+        }
+
+        touchStartPos = null;
+    }, { passive: false });
 
     // =========================================================================
     // Keyboard Shortcuts

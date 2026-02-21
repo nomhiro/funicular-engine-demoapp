@@ -275,3 +275,86 @@ header .subtitle {
     white-space: nowrap;
     z-index: 20;
 }
+
+/* =========================================
+   Mobile / Touch Responsive
+   ========================================= */
+
+@media (max-width: 768px) {
+    header {
+        padding: 6px 10px;
+    }
+
+    header h1 {
+        font-size: 1rem;
+    }
+
+    header .subtitle {
+        font-size: 0.65rem;
+    }
+
+    #toolbar {
+        gap: 6px;
+        padding: 6px 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+
+    .group-label {
+        display: none;
+    }
+
+    .tool-btn {
+        padding: 10px 10px;
+        font-size: 0.7rem;
+        min-height: 42px;
+    }
+
+    .tool-btn .icon {
+        font-size: 1.1rem;
+    }
+
+    /* Hide text labels on small screens, show only icons */
+    @media (max-width: 480px) {
+        .tool-btn {
+            padding: 10px 12px;
+        }
+    }
+
+    #main-canvas {
+        touch-action: none;
+    }
+
+    #properties-panel {
+        top: auto;
+        bottom: 50px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+        max-height: 40vh;
+        overflow-y: auto;
+    }
+
+    .prop-row input[type="range"] {
+        width: 120px;
+        height: 24px;
+    }
+
+    #info-panel {
+        padding: 4px 10px;
+    }
+
+    #mode-indicator {
+        font-size: 0.65rem;
+        padding: 3px 8px;
+    }
+}
+
+@media (max-width: 380px) {
+    .tool-btn {
+        padding: 8px 6px;
+        font-size: 0.65rem;
+        gap: 2px;
+    }
+}

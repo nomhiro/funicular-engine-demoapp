@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>フニクラ実験 - ガウディの逆さ吊り設計シミュレーター</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -52,7 +52,7 @@
         </div>
 
         <div id="canvas-container">
-            <canvas id="main-canvas"></canvas>
+            <canvas id="main-canvas" style="touch-action: none;"></canvas>
             <div id="ceiling-label" class="canvas-label">▼ 天井 (固定点をここに配置)</div>
             <div id="floor-label" class="canvas-label hidden">▲ 地面</div>
             <div id="mode-indicator">設計モード</div>
