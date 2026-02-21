@@ -269,10 +269,10 @@ header .subtitle {
     top: 8px;
     left: 12px;
     width: 200px;
-    background: rgba(22, 33, 62, 0.95);
+    background: rgba(22, 33, 62, 0.9);
     border: 1px solid #4ecdc4;
     border-radius: 6px;
-    padding: 12px;
+    padding: 10px;
     z-index: 10;
 }
 
@@ -280,12 +280,30 @@ header .subtitle {
     display: none;
 }
 
-#structure-options h3 {
+#structure-options details summary {
     font-size: 0.85rem;
     color: #4ecdc4;
-    margin-bottom: 8px;
-    border-bottom: 1px solid #333;
+    cursor: pointer;
     padding-bottom: 4px;
+    border-bottom: 1px solid #333;
+    list-style: none;
+}
+
+#structure-options details summary::before {
+    content: '▶ ';
+    font-size: 0.7rem;
+}
+
+#structure-options details[open] summary::before {
+    content: '▼ ';
+}
+
+#structure-options details summary::-webkit-details-marker {
+    display: none;
+}
+
+#structure-options .opt-body {
+    margin-top: 8px;
 }
 
 .opt-row {
@@ -394,8 +412,8 @@ header .subtitle {
     }
 
     #structure-options {
-        top: auto;
-        bottom: 50px;
+        top: 8px;
+        bottom: auto;
         left: 8px;
         right: 8px;
         width: auto;
