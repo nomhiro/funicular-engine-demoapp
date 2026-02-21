@@ -102,10 +102,12 @@ const CatenaryEngine = (() => {
         }
 
         // Solve for x0 (catenary lowest point) in local coords (0 to dh)
+        // For y = -a*cosh((x-x0)/a)+C: dv = 2a*sinh(dh/(2a))*sinh((2*x0-dh)/(2a))
+        // => x0 = dh/2 + a*asinh(dv / (2a*sinh(dh/(2a))))
         const sinhTerm = Math.sinh(dh / (2 * a));
         let x0Local = dh / 2;
         if (Math.abs(sinhTerm) > 1e-10) {
-            x0Local = dh / 2 - a * Math.asinh(dv / (2 * a * sinhTerm));
+            x0Local = dh / 2 + a * Math.asinh(dv / (2 * a * sinhTerm));
         }
 
         // Absolute x position of catenary vertex
