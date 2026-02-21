@@ -952,18 +952,50 @@
         const chain = chains.find(c => c.id === chainId);
         if (!chain) return;
 
-        const origLength = chain.length;
-        const len1 = origLength * position;
-        const len2 = origLength * (1 - position);
+        // Compute actual arc lengths of the two segments from the chain points
+        const pts = chain.points;
+        const splitIdx = Math.round(position * (pts.length - 1));
+        let arcLen1 = 0, arcLen2 = 0;
+
+        for (let i = 1; i <= splitIdx && i < pts.length; i++) {
+            const dx = pts[i].x - pts[i - 1].x;
+            const dy = pts[i].y - pts[i - 1].y;
+            arcLen1 += Math.sqrt(dx * dx + dy * dy);
+        }
+        for (let i = splitIdx + 1; i < pts.length; i++) {
+            const dx = pts[i].x - pts[i - 1].x;
+            const dy = pts[i].y - pts[i - 1].y;
+            arcLen2 += Math.sqrt(dx * dx + dy * dy);
+        }
+
+        const totalArc = arcLen1 + arcLen2;
+        if (totalArc < 0.01) return;
+
+        // Distribute the original chain length proportionally to arc lengths
+        const ratio1 = arcLen1 / totalArc;
+        const len1 = chain.length * ratio1;
+        const len2 = chain.length * (1 - ratio1);
+
+        // Ensure each segment is at least as long as the straight-line distance
+        const newAnchor = anchors.find(a => a.id === newAnchorId);
+        if (!newAnchor) return;
+        const p1 = getAnchorPosition(chain.startId);
+        const p2 = getAnchorPosition(chain.endId);
+        if (!p1 || !p2) return;
+
+        const dist1 = Math.sqrt((newAnchor.x - p1.x) ** 2 + (newAnchor.y - p1.y) ** 2);
+        const dist2 = Math.sqrt((p2.x - newAnchor.x) ** 2 + (p2.y - newAnchor.y) ** 2);
+        const finalLen1 = Math.max(len1, dist1 * 1.01);
+        const finalLen2 = Math.max(len2, dist2 * 1.01);
 
         // Distribute weights between the two new chains
         const weights1 = [];
         const weights2 = [];
         for (const w of chain.weights) {
             if (w.position < position) {
-                weights1.push({ position: w.position / position, mass: w.mass });
+                weights1.push({ position: ratio1 > 0 ? w.position / ratio1 : 0, mass: w.mass });
             } else {
-                weights2.push({ position: (w.position - position) / (1 - position), mass: w.mass });
+                weights2.push({ position: (1 - ratio1) > 0 ? (w.position - ratio1) / (1 - ratio1) : 0, mass: w.mass });
             }
         }
 
@@ -972,7 +1004,7 @@
             id: genId(),
             startId: chain.startId,
             endId: newAnchorId,
-            length: len1,
+            length: finalLen1,
             weights: weights1,
             points: []
         };
@@ -981,7 +1013,7 @@
             id: genId(),
             startId: newAnchorId,
             endId: chain.endId,
-            length: len2,
+            length: finalLen2,
             weights: weights2,
             points: []
         };
