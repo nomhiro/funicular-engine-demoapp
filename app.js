@@ -301,8 +301,20 @@
         // Determine which endpoints are ceiling anchors (walls/pillars only at ceiling)
         const startAnchor = anchors.find(a => a.id === chain.startId);
         const endAnchor = anchors.find(a => a.id === chain.endId);
-        const startIsCeiling = startAnchor && startAnchor.type === 'ceiling';
-        const endIsCeiling = endAnchor && endAnchor.type === 'ceiling';
+
+        // Only draw walls/pillars at a ceiling anchor that is a terminal endpoint
+        // of the overall structure (connected to exactly one chain).
+        // Interior junctions (shared by 2+ chains) should not have walls.
+        function isTerminalCeiling(anchor) {
+            if (!anchor || anchor.type !== 'ceiling') return false;
+            let count = 0;
+            for (const c of chains) {
+                if (c.startId === anchor.id || c.endId === anchor.id) count++;
+            }
+            return count === 1;
+        }
+        const startIsTerminal = isTerminalCeiling(startAnchor);
+        const endIsTerminal = isTerminalCeiling(endAnchor);
 
         // Build inner and outer edge paths (offset from center curve by normals)
         const inner = [];
@@ -346,7 +358,7 @@
             ctx.save();
             ctx.globalAlpha = flipProgress;
 
-            if (startIsCeiling) {
+            if (startIsTerminal) {
                 // Left wall: from left anchor down to ground
                 const leftOuterX = outer[0].x;
                 const leftInnerX = inner[0].x;
@@ -377,7 +389,7 @@
                 }
             }
 
-            if (endIsCeiling) {
+            if (endIsTerminal) {
                 // Right wall
                 const ri = pts.length - 1;
                 const rightOuterX = outer[ri].x;
@@ -456,8 +468,8 @@
 
         // --- Pillars at endpoints (only at ceiling anchors) ---
         if (structureOpts.pillars) {
-            if (startIsCeiling) drawPillar(outer[0], inner[0], groundY, colors, 'left');
-            if (endIsCeiling) drawPillar(outer[outer.length - 1], inner[inner.length - 1], groundY, colors, 'right');
+            if (startIsTerminal) drawPillar(outer[0], inner[0], groundY, colors, 'left');
+            if (endIsTerminal) drawPillar(outer[outer.length - 1], inner[inner.length - 1], groundY, colors, 'right');
         }
     }
 
