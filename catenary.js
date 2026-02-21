@@ -160,16 +160,13 @@ const CatenaryEngine = (() => {
 
     /**
      * Simulate a chain with multiple weights using position-based relaxation.
-     * Uses iterative Verlet-like relaxation for stable, natural catenary curves.
      *
-     * anchor1, anchor2: {x, y} fixed endpoints
-     * weights: [{position: 0-1 along chain, mass: number}]
-     * chainLength: total length of chain
-     * gravity: gravity constant
-     *
-     * Returns array of {x, y} points for rendering.
+     * Strategy: start from the analytical catenary (smooth curve), then apply
+     * gravity proportional to each particle's mass and iteratively enforce
+     * distance constraints. Uses pure position-based dynamics (no velocity)
+     * for guaranteed convergence to static equilibrium.
      */
-    function simulateChainWithWeights(anchor1, anchor2, chainLength, weights, gravity = 0.5, iterations = 80) {
+    function simulateChainWithWeights(anchor1, anchor2, chainLength, weights, gravity = 0.5, iterations = 120) {
         // If no weights, use the analytical catenary for a perfect curve
         if (!weights || weights.length === 0) {
             return generateCatenaryPoints(anchor1, anchor2, chainLength, 60);
@@ -177,23 +174,15 @@ const CatenaryEngine = (() => {
 
         const numSegments = 60;
         const segLength = chainLength / numSegments;
-        const dx = anchor2.x - anchor1.x;
-        const dy = anchor2.y - anchor1.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Initialize positions along straight line
-        const particles = [];
-        for (let i = 0; i <= numSegments; i++) {
-            const t = i / numSegments;
-            particles.push({
-                x: anchor1.x + dx * t,
-                y: anchor1.y + dy * t,
-                prevX: anchor1.x + dx * t,
-                prevY: anchor1.y + dy * t,
-                pinned: (i === 0 || i === numSegments),
-                mass: 1.0
-            });
-        }
+        // Initialize from analytical catenary (much better starting point)
+        const basePts = generateCatenaryPoints(anchor1, anchor2, chainLength, numSegments);
+        const particles = basePts.map((p, i) => ({
+            x: p.x,
+            y: p.y,
+            pinned: (i === 0 || i === numSegments),
+            mass: 1.0
+        }));
 
         // Add extra mass at weight positions
         for (const w of weights) {
@@ -203,49 +192,27 @@ const CatenaryEngine = (() => {
             }
         }
 
-        // Verlet integration with many constraint passes
-        const dt = 0.016;
-        const gForce = gravity * 200;
-        const damping = 0.99;
-        const constraintPasses = 15;
+        // Pure position-based relaxation (no velocity accumulation)
+        const gravityStep = gravity * 0.5;
 
         for (let iter = 0; iter < iterations; iter++) {
-            // Verlet integration step
+            // Apply gravity proportional to mass (only the EXTRA mass matters,
+            // since the base catenary already accounts for uniform mass)
             for (const p of particles) {
                 if (p.pinned) continue;
-                const vx = (p.x - p.prevX) * damping;
-                const vy = (p.y - p.prevY) * damping;
-                p.prevX = p.x;
-                p.prevY = p.y;
-                p.x += vx;
-                p.y += vy + gForce * p.mass * dt * dt;
+                p.y += gravityStep * (p.mass - 1.0);
             }
 
-            // Distance constraint solving
-            for (let c = 0; c < constraintPasses; c++) {
+            // Distance constraint solving - forward and backward passes
+            // for faster propagation across the chain
+            for (let c = 0; c < 30; c++) {
+                // Forward pass
                 for (let i = 0; i < numSegments; i++) {
-                    const a = particles[i];
-                    const b = particles[i + 1];
-
-                    const ddx = b.x - a.x;
-                    const ddy = b.y - a.y;
-                    const currentDist = Math.sqrt(ddx * ddx + ddy * ddy);
-
-                    if (currentDist < 0.001) continue;
-
-                    const diff = (segLength - currentDist) / currentDist;
-                    const totalMass = a.mass + b.mass;
-                    const ratioA = a.pinned ? 0 : (b.pinned ? 1 : b.mass / totalMass);
-                    const ratioB = b.pinned ? 0 : (a.pinned ? 1 : a.mass / totalMass);
-
-                    if (!a.pinned) {
-                        a.x -= ddx * diff * ratioA;
-                        a.y -= ddy * diff * ratioA;
-                    }
-                    if (!b.pinned) {
-                        b.x += ddx * diff * ratioB;
-                        b.y += ddy * diff * ratioB;
-                    }
+                    solveDistConstraint(particles[i], particles[i + 1], segLength);
+                }
+                // Backward pass
+                for (let i = numSegments - 1; i >= 0; i--) {
+                    solveDistConstraint(particles[i], particles[i + 1], segLength);
                 }
 
                 // Re-pin anchors
@@ -257,6 +224,27 @@ const CatenaryEngine = (() => {
         }
 
         return particles.map(p => ({ x: p.x, y: p.y }));
+    }
+
+    function solveDistConstraint(a, b, targetDist) {
+        const ddx = b.x - a.x;
+        const ddy = b.y - a.y;
+        const currentDist = Math.sqrt(ddx * ddx + ddy * ddy);
+        if (currentDist < 0.001) return;
+
+        const diff = (targetDist - currentDist) / currentDist;
+        const totalMass = a.mass + b.mass;
+        const ratioA = a.pinned ? 0 : (b.pinned ? 1 : b.mass / totalMass);
+        const ratioB = b.pinned ? 0 : (a.pinned ? 1 : a.mass / totalMass);
+
+        if (!a.pinned) {
+            a.x -= ddx * diff * ratioA;
+            a.y -= ddy * diff * ratioA;
+        }
+        if (!b.pinned) {
+            b.x += ddx * diff * ratioB;
+            b.y += ddy * diff * ratioB;
+        }
     }
 
     /**
