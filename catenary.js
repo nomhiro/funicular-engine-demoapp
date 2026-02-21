@@ -14,46 +14,56 @@ const CatenaryEngine = (() => {
 
     /**
      * Solve for the catenary parameter 'a' given two endpoints and chain length.
-     * Uses Newton's method on: sqrt(L^2 - dv^2) = 2a * sinh(dh / (2a))
-     * where dh = horizontal distance, dv = vertical distance, L = chain length.
+     * Solves: 2a * sinh(dh / (2a)) = target, where target = sqrt(L^2 - dv^2).
+     *
+     * The function g(a) = 2a*sinh(dh/(2a)) is monotonically decreasing:
+     *   g → +∞  as a → 0+    (exponential growth of sinh)
+     *   g → dh  as a → +∞    (sinh(x)/x → 1 for small x)
+     * So for any target > dh there is exactly one solution.
+     * Uses bisection for guaranteed convergence.
      */
     function solveCatenaryParam(dx, dy, length) {
         const dh = Math.abs(dx);
         const dv = Math.abs(dy);
 
-        // If length is barely enough to span the distance, return a very large 'a'
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (length <= dist * 1.001) {
             return { a: 1e6, valid: false };
         }
 
-        // The horizontal span of the catenary sag
-        const horizontalCatenarySag = Math.sqrt(length * length - dv * dv);
+        const target = Math.sqrt(length * length - dv * dv);
 
-        if (horizontalCatenarySag <= 0 || isNaN(horizontalCatenarySag)) {
+        if (target <= 0 || isNaN(target) || target <= dh) {
             return { a: 1e6, valid: false };
         }
 
-        // Newton's method: solve f(a) = 2a*sinh(dh/(2a)) - horizontalCatenarySag = 0
-        let a = Math.max(dh * 0.5, 1);
+        // g(a) = 2a * sinh(dh / (2a)) is monotonically decreasing from +∞ to dh.
+        // We need g(a) = target where target > dh.
+        // Find bracket: aLow where g > target, aHigh where g < target.
+        let aLow = 0.001;
+        let aHigh = Math.max(dh, 1);
 
-        for (let i = 0; i < 100; i++) {
-            const ratio = dh / (2 * a);
-            const sinhVal = Math.sinh(ratio);
-            const coshVal = Math.cosh(ratio);
-            const f = 2 * a * sinhVal - horizontalCatenarySag;
-            const fPrime = 2 * sinhVal - dh * coshVal / a;
-
-            if (Math.abs(fPrime) < 1e-15) break;
-
-            const da = f / fPrime;
-            a -= da;
-
-            if (a <= 0) a = 0.1;
-            if (Math.abs(da) < 1e-10) break;
+        // Expand aHigh until g(aHigh) < target
+        for (let i = 0; i < 50; i++) {
+            const g = 2 * aHigh * Math.sinh(dh / (2 * aHigh));
+            if (g < target) break;
+            aHigh *= 2;
         }
 
-        return { a: Math.max(a, 0.01), valid: true };
+        // Bisection search
+        for (let i = 0; i < 80; i++) {
+            const aMid = (aLow + aHigh) / 2;
+            const g = 2 * aMid * Math.sinh(dh / (2 * aMid));
+            if (g > target) {
+                aLow = aMid;   // g too large → a too small → raise lower bound
+            } else {
+                aHigh = aMid;  // g too small → a too large → lower upper bound
+            }
+            if (aHigh - aLow < 1e-12) break;
+        }
+
+        const a = (aLow + aHigh) / 2;
+        return { a: Math.max(a, 0.001), valid: true };
     }
 
     /**
