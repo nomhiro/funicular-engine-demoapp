@@ -63,6 +63,44 @@
             <div id="props-content"></div>
         </div>
 
+        <div id="structure-options" class="hidden">
+            <h3>構造物オプション</h3>
+            <div class="opt-row">
+                <label>壁面</label>
+                <input type="checkbox" id="opt-walls" checked>
+            </div>
+            <div class="opt-row">
+                <label>柱</label>
+                <input type="checkbox" id="opt-pillars" checked>
+            </div>
+            <div class="opt-row">
+                <label>石積みテクスチャ</label>
+                <input type="checkbox" id="opt-stone">
+            </div>
+            <div class="opt-row">
+                <label>窓</label>
+                <input type="checkbox" id="opt-windows">
+            </div>
+            <div class="opt-row">
+                <label>壁の厚さ</label>
+                <input type="range" id="opt-wall-thickness" min="4" max="40" value="16">
+            </div>
+            <div class="opt-row">
+                <label>壁の色</label>
+                <select id="opt-wall-color">
+                    <option value="sandstone">砂岩</option>
+                    <option value="granite">花崗岩</option>
+                    <option value="marble">大理石</option>
+                    <option value="brick">レンガ</option>
+                    <option value="concrete">コンクリート</option>
+                </select>
+            </div>
+            <div class="opt-row">
+                <label>地面を表示</label>
+                <input type="checkbox" id="opt-ground" checked>
+            </div>
+        </div>
+
         <div id="info-panel">
             <details>
                 <summary>使い方</summary>

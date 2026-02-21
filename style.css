@@ -263,6 +263,63 @@ header .subtitle {
     padding-left: 20px;
 }
 
+/* Structure Options Panel */
+#structure-options {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    width: 200px;
+    background: rgba(22, 33, 62, 0.95);
+    border: 1px solid #4ecdc4;
+    border-radius: 6px;
+    padding: 12px;
+    z-index: 10;
+}
+
+#structure-options.hidden {
+    display: none;
+}
+
+#structure-options h3 {
+    font-size: 0.85rem;
+    color: #4ecdc4;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 4px;
+}
+
+.opt-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.8rem;
+}
+
+.opt-row label {
+    color: #aaa;
+}
+
+.opt-row input[type="checkbox"] {
+    accent-color: #4ecdc4;
+    width: 16px;
+    height: 16px;
+}
+
+.opt-row input[type="range"] {
+    width: 80px;
+    accent-color: #4ecdc4;
+}
+
+.opt-row select {
+    background: #1a1a2e;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
 /* Tooltip for chain connection */
 .chain-tooltip {
     position: absolute;
@@ -334,6 +391,14 @@ header .subtitle {
         width: auto;
         max-height: 40vh;
         overflow-y: auto;
+    }
+
+    #structure-options {
+        top: auto;
+        bottom: 50px;
+        left: 8px;
+        right: 8px;
+        width: auto;
     }
 
     .prop-row input[type="range"] {

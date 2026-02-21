@@ -45,6 +45,28 @@
     let hoveredAnchor = null;
     let hoveredChainInfo = null; // { chainId, position, point }
 
+    // =========================================================================
+    // Structure Display Options
+    // =========================================================================
+
+    const structureOpts = {
+        walls: true,
+        pillars: true,
+        stone: false,
+        windows: false,
+        wallThickness: 16,
+        wallColor: 'sandstone',
+        ground: true
+    };
+
+    const WALL_COLORS = {
+        sandstone: { fill: '#d4b896', stroke: '#b89468', dark: '#a07840', light: '#e8d5a8', joint: '#c9a070' },
+        granite:   { fill: '#9a9a9a', stroke: '#707070', dark: '#585858', light: '#b8b8b8', joint: '#888888' },
+        marble:    { fill: '#e8e0d4', stroke: '#c8beb2', dark: '#a89e92', light: '#f5f0ea', joint: '#d8d0c4' },
+        brick:     { fill: '#b85c3c', stroke: '#8b3a2a', dark: '#6e2e1e', light: '#d47050', joint: '#ccb8a0' },
+        concrete:  { fill: '#a0a098', stroke: '#808078', dark: '#686860', light: '#b8b8b0', joint: '#909088' }
+    };
+
     const CEILING_Y = 50;        // Y position of the ceiling line
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const ANCHOR_RADIUS = isTouchDevice ? 12 : 8;
@@ -193,29 +215,23 @@
         }
     }
 
+    function getColors() {
+        return WALL_COLORS[structureOpts.wallColor] || WALL_COLORS.sandstone;
+    }
+
     function drawChain(chain, flipY, w, h) {
         const pts = chain.points;
         const isStructure = isFlipped || flipProgress > 0;
 
-        // Chain line
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, flipY(pts[0].y));
-        for (let i = 1; i < pts.length; i++) {
-            ctx.lineTo(pts[i].x, flipY(pts[i].y));
-        }
-
         if (isStructure) {
-            // Structure mode: thicker, stone-like appearance
-            ctx.strokeStyle = '#c9a96e';
-            ctx.lineWidth = 6;
-            ctx.stroke();
-
-            // Inner line
-            ctx.strokeStyle = '#e8d5a8';
-            ctx.lineWidth = 3;
-            ctx.stroke();
+            drawStructureArch(chain, flipY, w, h);
         } else {
             // Chain mode: thin metallic line
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, flipY(pts[0].y));
+            for (let i = 1; i < pts.length; i++) {
+                ctx.lineTo(pts[i].x, flipY(pts[i].y));
+            }
             ctx.strokeStyle = '#8899aa';
             ctx.lineWidth = 2;
             ctx.stroke();
@@ -238,14 +254,21 @@
                 const wy = flipY(pt.y);
 
                 if (isStructure) {
-                    // Show as a keystone
-                    ctx.fillStyle = '#c9a96e';
-                    ctx.fillRect(pt.x - 6, wy - 6, 12, 12);
-                    ctx.strokeStyle = '#a07840';
+                    // Keystone marker
+                    const colors = getColors();
+                    const ks = 8;
+                    ctx.fillStyle = colors.dark;
+                    ctx.beginPath();
+                    ctx.moveTo(pt.x, wy - ks);
+                    ctx.lineTo(pt.x + ks, wy);
+                    ctx.lineTo(pt.x, wy + ks);
+                    ctx.lineTo(pt.x - ks, wy);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = colors.light;
                     ctx.lineWidth = 1;
-                    ctx.strokeRect(pt.x - 6, wy - 6, 12, 12);
+                    ctx.stroke();
                 } else {
-                    // Show as hanging weight
                     const size = 4 + wt.mass * 2;
                     ctx.fillStyle = '#e94560';
                     ctx.beginPath();
@@ -255,7 +278,6 @@
                     ctx.lineWidth = 1;
                     ctx.stroke();
 
-                    // Mass label
                     ctx.fillStyle = '#fff';
                     ctx.font = '10px monospace';
                     ctx.textAlign = 'center';
@@ -263,6 +285,304 @@
                 }
             }
         }
+    }
+
+    /**
+     * Draw an architectural arch/wall structure along the chain curve.
+     * The catenary curve becomes the center line of a thick arch wall.
+     */
+    function drawStructureArch(chain, flipY, w, h) {
+        const pts = chain.points;
+        const colors = getColors();
+        const thickness = structureOpts.wallThickness * flipProgress;
+        const halfT = thickness / 2;
+        const groundY = flipY(h - 20);
+
+        // Build inner and outer edge paths (offset from center curve by normals)
+        const inner = [];
+        const outer = [];
+        for (let i = 0; i < pts.length; i++) {
+            const cy = flipY(pts[i].y);
+            const cx = pts[i].x;
+
+            // Compute normal at this point
+            let nx = 0, ny = -1;
+            if (i > 0 && i < pts.length - 1) {
+                const dx = pts[i + 1].x - pts[i - 1].x;
+                const dy = flipY(pts[i + 1].y) - flipY(pts[i - 1].y);
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                nx = -dy / len;
+                ny = dx / len;
+            } else if (i === 0 && pts.length > 1) {
+                const dx = pts[1].x - pts[0].x;
+                const dy = flipY(pts[1].y) - flipY(pts[0].y);
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                nx = -dy / len;
+                ny = dx / len;
+            } else if (i === pts.length - 1 && pts.length > 1) {
+                const dx = pts[i].x - pts[i - 1].x;
+                const dy = flipY(pts[i].y) - flipY(pts[i - 1].y);
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                nx = -dy / len;
+                ny = dx / len;
+            }
+
+            // Ensure normal points upward (toward outside of arch)
+            if (ny > 0) { nx = -nx; ny = -ny; }
+
+            outer.push({ x: cx + nx * halfT, y: cy + ny * halfT });
+            inner.push({ x: cx - nx * halfT, y: cy - ny * halfT });
+        }
+
+        if (structureOpts.walls) {
+            // --- Draw wall fill from arch down to ground ---
+            ctx.save();
+            ctx.globalAlpha = flipProgress;
+
+            // Left wall: from left anchor down to ground
+            const leftOuterX = outer[0].x;
+            const leftInnerX = inner[0].x;
+            const leftTopOuter = outer[0].y;
+            const leftTopInner = inner[0].y;
+
+            ctx.beginPath();
+            ctx.moveTo(leftOuterX, leftTopOuter);
+            ctx.lineTo(leftOuterX, groundY);
+            ctx.lineTo(leftInnerX, groundY);
+            ctx.lineTo(leftInnerX, leftTopInner);
+            ctx.closePath();
+            ctx.fillStyle = colors.fill;
+            ctx.fill();
+            ctx.strokeStyle = colors.stroke;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Right wall
+            const ri = pts.length - 1;
+            const rightOuterX = outer[ri].x;
+            const rightInnerX = inner[ri].x;
+            const rightTopOuter = outer[ri].y;
+            const rightTopInner = inner[ri].y;
+
+            ctx.beginPath();
+            ctx.moveTo(rightOuterX, rightTopOuter);
+            ctx.lineTo(rightOuterX, groundY);
+            ctx.lineTo(rightInnerX, groundY);
+            ctx.lineTo(rightInnerX, rightTopInner);
+            ctx.closePath();
+            ctx.fillStyle = colors.fill;
+            ctx.fill();
+            ctx.strokeStyle = colors.stroke;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Stone texture on walls
+            if (structureOpts.stone) {
+                drawStoneTexture(leftOuterX, leftInnerX, Math.min(leftTopOuter, leftTopInner), groundY, colors);
+                drawStoneTexture(rightInnerX, rightOuterX, Math.min(rightTopOuter, rightTopInner), groundY, colors);
+            }
+
+            // Windows on walls
+            if (structureOpts.windows) {
+                const leftWallHeight = groundY - Math.min(leftTopOuter, leftTopInner);
+                const rightWallHeight = groundY - Math.min(rightTopOuter, rightTopInner);
+                const wallWidth = Math.abs(leftOuterX - leftInnerX);
+                if (leftWallHeight > 60 && wallWidth > 6) {
+                    drawWindowOnWall((leftOuterX + leftInnerX) / 2, Math.min(leftTopOuter, leftTopInner) + leftWallHeight * 0.35, wallWidth * 0.5, leftWallHeight * 0.25, colors);
+                }
+                if (rightWallHeight > 60 && wallWidth > 6) {
+                    drawWindowOnWall((rightOuterX + rightInnerX) / 2, Math.min(rightTopOuter, rightTopInner) + rightWallHeight * 0.35, wallWidth * 0.5, rightWallHeight * 0.25, colors);
+                }
+            }
+
+            ctx.restore();
+        }
+
+        // --- Draw the arch body (thick curved wall) ---
+        ctx.save();
+        ctx.globalAlpha = flipProgress;
+
+        // Fill arch shape
+        ctx.beginPath();
+        ctx.moveTo(outer[0].x, outer[0].y);
+        for (let i = 1; i < outer.length; i++) {
+            ctx.lineTo(outer[i].x, outer[i].y);
+        }
+        for (let i = inner.length - 1; i >= 0; i--) {
+            ctx.lineTo(inner[i].x, inner[i].y);
+        }
+        ctx.closePath();
+
+        // Gradient fill for depth
+        const archGrad = ctx.createLinearGradient(0, outer[Math.floor(outer.length / 2)].y - halfT, 0, inner[Math.floor(inner.length / 2)].y + halfT);
+        archGrad.addColorStop(0, colors.light);
+        archGrad.addColorStop(0.5, colors.fill);
+        archGrad.addColorStop(1, colors.dark);
+        ctx.fillStyle = archGrad;
+        ctx.fill();
+
+        // Arch outline
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(outer[0].x, outer[0].y);
+        for (let i = 1; i < outer.length; i++) ctx.lineTo(outer[i].x, outer[i].y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(inner[0].x, inner[0].y);
+        for (let i = 1; i < inner.length; i++) ctx.lineTo(inner[i].x, inner[i].y);
+        ctx.stroke();
+
+        // Stone texture on arch
+        if (structureOpts.stone) {
+            drawArchStoneTexture(outer, inner, colors);
+        }
+
+        ctx.restore();
+
+        // --- Pillars at endpoints ---
+        if (structureOpts.pillars) {
+            drawPillar(outer[0], inner[0], groundY, colors, 'left');
+            drawPillar(outer[outer.length - 1], inner[inner.length - 1], groundY, colors, 'right');
+        }
+    }
+
+    function drawStoneTexture(x1, x2, topY, bottomY, colors) {
+        const left = Math.min(x1, x2);
+        const right = Math.max(x1, x2);
+        const width = right - left;
+        if (width < 3) return;
+
+        ctx.save();
+        ctx.strokeStyle = colors.joint;
+        ctx.lineWidth = 0.5;
+        ctx.globalAlpha = 0.4 * flipProgress;
+
+        const rowHeight = 12;
+        let row = 0;
+        for (let y = topY + 4; y < bottomY - 4; y += rowHeight) {
+            // Horizontal joint
+            ctx.beginPath();
+            ctx.moveTo(left + 1, y);
+            ctx.lineTo(right - 1, y);
+            ctx.stroke();
+
+            // Vertical joints (staggered)
+            const offset = (row % 2) * (width * 0.4);
+            for (let x = left + offset; x < right; x += width * 0.7) {
+                if (x > left + 2 && x < right - 2) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x, Math.min(y + rowHeight, bottomY - 2));
+                    ctx.stroke();
+                }
+            }
+            row++;
+        }
+        ctx.restore();
+    }
+
+    function drawArchStoneTexture(outer, inner, colors) {
+        ctx.save();
+        ctx.strokeStyle = colors.joint;
+        ctx.lineWidth = 0.8;
+        ctx.globalAlpha = 0.35;
+
+        // Radial joints along the arch (voussoir lines)
+        const step = Math.max(1, Math.floor(outer.length / 16));
+        for (let i = step; i < outer.length - 1; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(outer[i].x, outer[i].y);
+            ctx.lineTo(inner[i].x, inner[i].y);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    function drawPillar(outerPt, innerPt, groundY, colors, side) {
+        ctx.save();
+        ctx.globalAlpha = flipProgress;
+
+        const pillarWidth = Math.abs(outerPt.x - innerPt.x) + 8;
+        const centerX = (outerPt.x + innerPt.x) / 2;
+        const topY = Math.min(outerPt.y, innerPt.y);
+        const left = centerX - pillarWidth / 2;
+
+        // Pillar body
+        const pillarGrad = ctx.createLinearGradient(left, 0, left + pillarWidth, 0);
+        pillarGrad.addColorStop(0, colors.dark);
+        pillarGrad.addColorStop(0.3, colors.light);
+        pillarGrad.addColorStop(0.7, colors.fill);
+        pillarGrad.addColorStop(1, colors.dark);
+        ctx.fillStyle = pillarGrad;
+        ctx.fillRect(left, topY, pillarWidth, groundY - topY);
+
+        // Pillar outline
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(left, topY, pillarWidth, groundY - topY);
+
+        // Capital (top ornament)
+        const capH = 6;
+        const capW = pillarWidth + 6;
+        ctx.fillStyle = colors.light;
+        ctx.fillRect(centerX - capW / 2, topY - capH, capW, capH);
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(centerX - capW / 2, topY - capH, capW, capH);
+
+        // Base ornament
+        const baseH = 6;
+        const baseW = pillarWidth + 6;
+        ctx.fillStyle = colors.light;
+        ctx.fillRect(centerX - baseW / 2, groundY, baseW, baseH);
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(centerX - baseW / 2, groundY, baseW, baseH);
+
+        // Stone texture on pillar
+        if (structureOpts.stone) {
+            drawStoneTexture(left, left + pillarWidth, topY, groundY, colors);
+        }
+
+        ctx.restore();
+    }
+
+    function drawWindowOnWall(cx, cy, winW, winH, colors) {
+        ctx.save();
+        ctx.globalAlpha = flipProgress;
+
+        const hw = winW / 2;
+        const hh = winH / 2;
+        const archRadius = hw;
+
+        // Window opening (dark)
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy + hh);
+        ctx.lineTo(cx - hw, cy - hh + archRadius);
+        ctx.arc(cx, cy - hh + archRadius, archRadius, Math.PI, 0);
+        ctx.lineTo(cx + hw, cy + hh);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(10, 15, 30, 0.85)';
+        ctx.fill();
+
+        // Window frame
+        ctx.strokeStyle = colors.dark;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Light glow inside
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(hw, hh));
+        glow.addColorStop(0, '#ffe8a0');
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.fill();
+        ctx.restore();
+
+        ctx.restore();
     }
 
     function drawAnchor(anchor, flipY) {
@@ -278,7 +598,7 @@
         ctx.arc(x, y, ANCHOR_RADIUS, 0, Math.PI * 2);
 
         if (isStructure) {
-            ctx.fillStyle = isCeiling ? '#4ecdc4' : '#c9a96e';
+            ctx.fillStyle = isCeiling ? '#4ecdc4' : getColors().fill;
         } else {
             ctx.fillStyle = isCeiling ? '#e94560' : '#4ecdc4';
         }
@@ -295,7 +615,7 @@
             ctx.stroke();
         }
 
-        // Ceiling mount indicator
+        // Ceiling mount indicator (design mode)
         if (isCeiling && !isStructure) {
             ctx.strokeStyle = '#e94560';
             ctx.lineWidth = 2;
@@ -304,7 +624,6 @@
             ctx.lineTo(x + 10, y - 8);
             ctx.stroke();
 
-            // Small hatching
             for (let i = -8; i <= 8; i += 4) {
                 ctx.beginPath();
                 ctx.moveTo(x + i, y - 8);
@@ -313,7 +632,7 @@
             }
         }
 
-        // Foundation indicator when flipped
+        // Foundation indicator (structure mode)
         if (isCeiling && isStructure) {
             ctx.strokeStyle = '#4ecdc4';
             ctx.lineWidth = 2;
@@ -322,7 +641,6 @@
             ctx.lineTo(x + 12, y + 8);
             ctx.stroke();
 
-            // Ground hatching
             for (let i = -10; i <= 10; i += 4) {
                 ctx.beginPath();
                 ctx.moveTo(x + i, y + 8);
@@ -333,9 +651,22 @@
     }
 
     function drawStructureFill(flipY, w, h) {
-        // Light fill effect for structure
+        // Ground plane
+        if (structureOpts.ground) {
+            const groundY = flipY(h - 20);
+            ctx.save();
+            ctx.globalAlpha = 0.3 * flipProgress;
+            const groundGrad = ctx.createLinearGradient(0, groundY, 0, groundY + 30);
+            groundGrad.addColorStop(0, getColors().dark);
+            groundGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = groundGrad;
+            ctx.fillRect(0, groundY, w, 30);
+            ctx.restore();
+        }
+
+        // Light interior fill below arches
         ctx.save();
-        ctx.globalAlpha = 0.08 * flipProgress;
+        ctx.globalAlpha = 0.05 * flipProgress;
 
         for (const chain of chains) {
             if (!chain.points || chain.points.length < 2) continue;
@@ -348,13 +679,15 @@
                 ctx.lineTo(pts[i].x, flipY(pts[i].y));
             }
 
-            // Close down to ground
             const groundY = flipY(h - 20);
             ctx.lineTo(pts[pts.length - 1].x, groundY);
             ctx.lineTo(pts[0].x, groundY);
             ctx.closePath();
 
-            ctx.fillStyle = '#c9a96e';
+            const interiorGrad = ctx.createLinearGradient(0, flipY(pts[0].y), 0, groundY);
+            interiorGrad.addColorStop(0, '#ffe8a0');
+            interiorGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = interiorGrad;
             ctx.fill();
         }
 
@@ -825,6 +1158,10 @@
     modeButtons['select'].addEventListener('click', () => setMode('select'));
 
     // Flip button
+    function updateStructurePanel() {
+        document.getElementById('structure-options').classList.toggle('hidden', !isFlipped);
+    }
+
     document.getElementById('btn-flip').addEventListener('click', () => {
         isFlipped = !isFlipped;
         flipProgress = isFlipped ? 1 : 0;
@@ -836,6 +1173,7 @@
 
         document.getElementById('ceiling-label').classList.toggle('hidden', isFlipped);
         document.getElementById('floor-label').classList.toggle('hidden', !isFlipped);
+        updateStructurePanel();
 
         render();
     });
@@ -875,12 +1213,46 @@
                 indicator.classList.toggle('structure', isFlipped);
                 document.getElementById('ceiling-label').classList.toggle('hidden', isFlipped);
                 document.getElementById('floor-label').classList.toggle('hidden', !isFlipped);
+                updateStructurePanel();
 
                 render();
             }
         }
 
         requestAnimationFrame(animate);
+    });
+
+    // =========================================================================
+    // Structure Options Controls
+    // =========================================================================
+
+    document.getElementById('opt-walls').addEventListener('change', (e) => {
+        structureOpts.walls = e.target.checked;
+        render();
+    });
+    document.getElementById('opt-pillars').addEventListener('change', (e) => {
+        structureOpts.pillars = e.target.checked;
+        render();
+    });
+    document.getElementById('opt-stone').addEventListener('change', (e) => {
+        structureOpts.stone = e.target.checked;
+        render();
+    });
+    document.getElementById('opt-windows').addEventListener('change', (e) => {
+        structureOpts.windows = e.target.checked;
+        render();
+    });
+    document.getElementById('opt-wall-thickness').addEventListener('input', (e) => {
+        structureOpts.wallThickness = parseInt(e.target.value);
+        render();
+    });
+    document.getElementById('opt-wall-color').addEventListener('change', (e) => {
+        structureOpts.wallColor = e.target.value;
+        render();
+    });
+    document.getElementById('opt-ground').addEventListener('change', (e) => {
+        structureOpts.ground = e.target.checked;
+        render();
     });
 
     // Clear button
@@ -901,6 +1273,7 @@
             document.getElementById('mode-indicator').classList.remove('structure');
             document.getElementById('ceiling-label').classList.remove('hidden');
             document.getElementById('floor-label').classList.add('hidden');
+            updateStructurePanel();
         }
 
         render();
@@ -980,6 +1353,7 @@
             document.getElementById('mode-indicator').classList.remove('structure');
             document.getElementById('ceiling-label').classList.remove('hidden');
             document.getElementById('floor-label').classList.add('hidden');
+            updateStructurePanel();
         }
 
         recomputeAllChains();
