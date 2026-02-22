@@ -459,44 +459,312 @@
     }
 
     function drawStructureFill(flipY, w, h) {
+        const colors = getColors();
+        const groundY = flipY(h - 20);
+        const thickness = structureOpts.wallThickness * flipProgress;
+
         // Ground plane
         if (structureOpts.ground) {
-            const groundY = flipY(h - 20);
             ctx.save();
             ctx.globalAlpha = 0.3 * flipProgress;
             const groundGrad = ctx.createLinearGradient(0, groundY, 0, groundY + 30);
-            groundGrad.addColorStop(0, getColors().dark);
+            groundGrad.addColorStop(0, colors.dark);
             groundGrad.addColorStop(1, 'transparent');
             ctx.fillStyle = groundGrad;
             ctx.fillRect(0, groundY, w, 30);
             ctx.restore();
         }
 
+        // Pillars: draw vertical walls from each ceiling anchor down to ground
+        ctx.save();
+        ctx.globalAlpha = flipProgress;
+        const halfT = thickness / 2;
+        for (const anchor of anchors) {
+            if (anchor.type !== 'ceiling') continue;
+            const ax = anchor.x;
+            const topY = flipY(anchor.y);
+
+            // Find the highest arch point at this anchor
+            let archTopY = groundY;
+            for (const chain of chains) {
+                if (!chain.points || chain.points.length < 2) continue;
+                const startAnchor = anchors.find(a => a.id === chain.startId);
+                const endAnchor = anchors.find(a => a.id === chain.endId);
+                if (!startAnchor || !endAnchor) continue;
+                if (startAnchor.id === anchor.id) {
+                    archTopY = Math.min(archTopY, flipY(chain.points[0].y));
+                }
+                if (endAnchor.id === anchor.id) {
+                    archTopY = Math.min(archTopY, flipY(chain.points[chain.points.length - 1].y));
+                }
+            }
+
+            // Pillar body
+            const pillarGrad = ctx.createLinearGradient(ax - halfT, 0, ax + halfT, 0);
+            pillarGrad.addColorStop(0, colors.dark);
+            pillarGrad.addColorStop(0.3, colors.fill);
+            pillarGrad.addColorStop(0.7, colors.light);
+            pillarGrad.addColorStop(1, colors.dark);
+            ctx.fillStyle = pillarGrad;
+            ctx.fillRect(ax - halfT, archTopY, thickness, groundY - archTopY);
+
+            // Pillar outline
+            ctx.strokeStyle = colors.stroke;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(ax - halfT, archTopY, thickness, groundY - archTopY);
+
+            // Stone texture on pillars
+            if (structureOpts.stone) {
+                ctx.save();
+                ctx.strokeStyle = colors.joint;
+                ctx.lineWidth = 0.6;
+                ctx.globalAlpha = 0.3;
+                const rowH = thickness * 1.2;
+                for (let py = archTopY + rowH; py < groundY; py += rowH) {
+                    ctx.beginPath();
+                    ctx.moveTo(ax - halfT, py);
+                    ctx.lineTo(ax + halfT, py);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // Capital (top of pillar decorative element)
+            const capW = halfT + 3;
+            ctx.fillStyle = colors.light;
+            ctx.fillRect(ax - capW, archTopY - 3, capW * 2, 6);
+            ctx.strokeStyle = colors.stroke;
+            ctx.lineWidth = 0.8;
+            ctx.strokeRect(ax - capW, archTopY - 3, capW * 2, 6);
+
+            // Base (bottom of pillar)
+            ctx.fillStyle = colors.light;
+            ctx.fillRect(ax - capW, groundY - 4, capW * 2, 4);
+            ctx.strokeStyle = colors.stroke;
+            ctx.strokeRect(ax - capW, groundY - 4, capW * 2, 4);
+        }
+        ctx.restore();
+
+        // Spires on top of arches
+        drawSpires(flipY, w, h, groundY);
+
+        // Rose windows in large arches
+        drawRoseWindows(flipY, w, h);
+
         // Light interior fill below arches
         ctx.save();
         ctx.globalAlpha = 0.05 * flipProgress;
-
         for (const chain of chains) {
             if (!chain.points || chain.points.length < 2) continue;
-
             const pts = chain.points;
             ctx.beginPath();
             ctx.moveTo(pts[0].x, flipY(pts[0].y));
-
             for (let i = 1; i < pts.length; i++) {
                 ctx.lineTo(pts[i].x, flipY(pts[i].y));
             }
-
-            const groundY = flipY(h - 20);
             ctx.lineTo(pts[pts.length - 1].x, groundY);
             ctx.lineTo(pts[0].x, groundY);
             ctx.closePath();
-
             const interiorGrad = ctx.createLinearGradient(0, flipY(pts[0].y), 0, groundY);
             interiorGrad.addColorStop(0, '#ffe8a0');
             interiorGrad.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = interiorGrad;
             ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    /**
+     * Draw spires (pointed towers) above arch peaks.
+     * A spire is drawn at the highest point of each chain that has weights.
+     */
+    function drawSpires(flipY, w, h, groundY) {
+        if (!isFlipped && flipProgress < 0.5) return;
+        const colors = getColors();
+        const thickness = structureOpts.wallThickness * flipProgress;
+
+        ctx.save();
+        ctx.globalAlpha = flipProgress;
+
+        for (const chain of chains) {
+            if (!chain.points || chain.points.length < 2) continue;
+            if (!chain.weights || chain.weights.length === 0) continue;
+
+            // Find the arch peak (highest point when flipped = lowest screen Y)
+            let peakIdx = 0;
+            let peakScreenY = Infinity;
+            for (let i = 0; i < chain.points.length; i++) {
+                const sy = flipY(chain.points[i].y);
+                if (sy < peakScreenY) {
+                    peakScreenY = sy;
+                    peakIdx = i;
+                }
+            }
+
+            const peakX = chain.points[peakIdx].x;
+            const peakY = peakScreenY;
+
+            // Determine spire height based on weight mass (heavier = taller)
+            const maxMass = Math.max(...chain.weights.map(wt => wt.mass));
+            // Also factor in arch span
+            const startPt = chain.points[0];
+            const endPt = chain.points[chain.points.length - 1];
+            const span = Math.abs(endPt.x - startPt.x);
+            const spireH = Math.min(span * 0.4, 20 + maxMass * 12) * flipProgress;
+
+            if (spireH < 10) continue;
+
+            const halfBase = thickness * 0.6;
+
+            // Spire body (tapered tower)
+            ctx.beginPath();
+            ctx.moveTo(peakX - halfBase, peakY);
+            ctx.lineTo(peakX - halfBase * 0.3, peakY - spireH * 0.7);
+            ctx.lineTo(peakX, peakY - spireH);
+            ctx.lineTo(peakX + halfBase * 0.3, peakY - spireH * 0.7);
+            ctx.lineTo(peakX + halfBase, peakY);
+            ctx.closePath();
+
+            const spireGrad = ctx.createLinearGradient(peakX - halfBase, peakY, peakX + halfBase, peakY);
+            spireGrad.addColorStop(0, colors.dark);
+            spireGrad.addColorStop(0.4, colors.fill);
+            spireGrad.addColorStop(0.6, colors.light);
+            spireGrad.addColorStop(1, colors.dark);
+            ctx.fillStyle = spireGrad;
+            ctx.fill();
+            ctx.strokeStyle = colors.stroke;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Cross at spire top
+            drawCross(peakX, peakY - spireH - 6, 5 * flipProgress, colors);
+
+            // Spire stone rows
+            if (structureOpts.stone) {
+                ctx.save();
+                ctx.strokeStyle = colors.joint;
+                ctx.lineWidth = 0.5;
+                ctx.globalAlpha = 0.3;
+                const rows = 4;
+                for (let r = 1; r <= rows; r++) {
+                    const t = r / (rows + 1);
+                    const rowY = peakY - spireH * t;
+                    const rowHalfW = halfBase * (1 - t * 0.7);
+                    ctx.beginPath();
+                    ctx.moveTo(peakX - rowHalfW, rowY);
+                    ctx.lineTo(peakX + rowHalfW, rowY);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+        ctx.restore();
+    }
+
+    /**
+     * Draw a small cross symbol.
+     */
+    function drawCross(cx, cy, size, colors) {
+        ctx.strokeStyle = colors.light;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - size);
+        ctx.lineTo(cx, cy + size);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - size * 0.6, cy - size * 0.3);
+        ctx.lineTo(cx + size * 0.6, cy - size * 0.3);
+        ctx.stroke();
+    }
+
+    /**
+     * Draw rose windows inside large arches.
+     * Only draws in arches with span > 150px.
+     */
+    function drawRoseWindows(flipY, w, h) {
+        if (!isFlipped && flipProgress < 0.5) return;
+        const colors = getColors();
+
+        ctx.save();
+        ctx.globalAlpha = flipProgress * 0.6;
+
+        for (const chain of chains) {
+            if (!chain.points || chain.points.length < 2) continue;
+
+            const startPt = chain.points[0];
+            const endPt = chain.points[chain.points.length - 1];
+            const span = Math.abs(endPt.x - startPt.x);
+            if (span < 150) continue;
+
+            // Find arch peak
+            let peakIdx = 0;
+            let peakScreenY = Infinity;
+            for (let i = 0; i < chain.points.length; i++) {
+                const sy = flipY(chain.points[i].y);
+                if (sy < peakScreenY) {
+                    peakScreenY = sy;
+                    peakIdx = i;
+                }
+            }
+
+            const cx = chain.points[peakIdx].x;
+            // Position the rose window between the peak and the midpoint of the arch opening
+            const archOpeningY = Math.max(flipY(startPt.y), flipY(endPt.y));
+            const centerY = peakScreenY + (archOpeningY - peakScreenY) * 0.35;
+            const radius = Math.min(span * 0.12, 25);
+
+            if (radius < 8) continue;
+
+            // Outer ring
+            ctx.strokeStyle = colors.light;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cx, centerY, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Inner ring
+            ctx.beginPath();
+            ctx.arc(cx, centerY, radius * 0.6, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Radial spokes
+            ctx.lineWidth = 1;
+            const spokes = 8;
+            for (let s = 0; s < spokes; s++) {
+                const angle = (s / spokes) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.moveTo(cx + Math.cos(angle) * radius * 0.6, centerY + Math.sin(angle) * radius * 0.6);
+                ctx.lineTo(cx + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+                ctx.stroke();
+            }
+
+            // Glowing fill
+            const glowGrad = ctx.createRadialGradient(cx, centerY, 0, cx, centerY, radius);
+            glowGrad.addColorStop(0, 'rgba(255, 220, 120, 0.3)');
+            glowGrad.addColorStop(0.6, 'rgba(255, 180, 80, 0.15)');
+            glowGrad.addColorStop(1, 'rgba(255, 150, 50, 0)');
+            ctx.fillStyle = glowGrad;
+            ctx.beginPath();
+            ctx.arc(cx, centerY, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Small petal shapes between spokes
+            ctx.lineWidth = 0.8;
+            for (let s = 0; s < spokes; s++) {
+                const a1 = (s / spokes) * Math.PI * 2;
+                const a2 = ((s + 1) / spokes) * Math.PI * 2;
+                const midA = (a1 + a2) / 2;
+                const innerR = radius * 0.6;
+                const outerR = radius * 0.85;
+                ctx.beginPath();
+                ctx.arc(
+                    cx + Math.cos(midA) * (innerR + outerR) * 0.5,
+                    centerY + Math.sin(midA) * (innerR + outerR) * 0.5,
+                    (outerR - innerR) * 0.6,
+                    0, Math.PI * 2
+                );
+                ctx.stroke();
+            }
         }
 
         ctx.restore();
@@ -1226,16 +1494,25 @@
         nextId = 1;
 
         const w = canvas.width / window.devicePixelRatio;
-        const centerX = w / 2;
+        const cx = w / 2;
 
-        // Create ceiling anchors for a cathedral-like structure
+        // Sagrada Familia-inspired cathedral layout
+        // 10 anchor points forming a symmetrical facade
+        //
+        //   0     1   2   3   4   5   6   7     8
+        //   |     |   |   |   |   |   |   |     |
+        //  far   outer  inner nave inner outer  far
+        //  left  left  left  L  R  right right  right
+
         const ceilingAnchors = [
-            { x: centerX - 250, y: CEILING_Y },
-            { x: centerX - 150, y: CEILING_Y },
-            { x: centerX - 50, y: CEILING_Y },
-            { x: centerX + 50, y: CEILING_Y },
-            { x: centerX + 150, y: CEILING_Y },
-            { x: centerX + 250, y: CEILING_Y }
+            { x: cx - 280, y: CEILING_Y },  // 0: far left tower base
+            { x: cx - 190, y: CEILING_Y },  // 1: outer left
+            { x: cx - 120, y: CEILING_Y },  // 2: inner left
+            { x: cx - 50,  y: CEILING_Y },  // 3: nave left
+            { x: cx + 50,  y: CEILING_Y },  // 4: nave right
+            { x: cx + 120, y: CEILING_Y },  // 5: inner right
+            { x: cx + 190, y: CEILING_Y },  // 6: outer right
+            { x: cx + 280, y: CEILING_Y },  // 7: far right tower base
         ];
 
         for (const pos of ceilingAnchors) {
@@ -1247,19 +1524,33 @@
             });
         }
 
-        // Main arch chains
-        const h = canvas.height / window.devicePixelRatio;
+        // Scale factor: fit chains within canvas height
+        // h typically ~500-700px, CEILING_Y=50, ground at h-20
+        // Available sag range ≈ h - 70, so keep maxSag under ~400px
         const chainDefs = [
-            // Outer arches
-            { start: 0, end: 5, lengthFactor: 2.5, weights: [{ pos: 0.5, mass: 5 }] },
-            // Inner arches
-            { start: 1, end: 4, lengthFactor: 2.2, weights: [{ pos: 0.5, mass: 4 }] },
-            { start: 2, end: 3, lengthFactor: 2.0, weights: [{ pos: 0.5, mass: 3 }] },
-            // Side arches
-            { start: 0, end: 1, lengthFactor: 2.0, weights: [{ pos: 0.5, mass: 2 }] },
-            { start: 1, end: 2, lengthFactor: 2.0, weights: [{ pos: 0.5, mass: 2 }] },
-            { start: 3, end: 4, lengthFactor: 2.0, weights: [{ pos: 0.5, mass: 2 }] },
+            // === Grand central nave arch (widest, tallest) ===
+            { start: 0, end: 7, lengthFactor: 1.8, weights: [{ pos: 0.5, mass: 5 }] },
+
+            // === Main facade arch ===
+            { start: 1, end: 6, lengthFactor: 1.8, weights: [{ pos: 0.5, mass: 4 }] },
+
+            // === Central nave arch ===
+            { start: 3, end: 4, lengthFactor: 2.2, weights: [{ pos: 0.5, mass: 3 }] },
+
+            // === Side aisle arches (left & right, symmetric) ===
+            { start: 2, end: 3, lengthFactor: 2.0, weights: [{ pos: 0.5, mass: 2 }] },
             { start: 4, end: 5, lengthFactor: 2.0, weights: [{ pos: 0.5, mass: 2 }] },
+
+            // === Tower arches (narrow, pointed) ===
+            { start: 0, end: 1, lengthFactor: 1.8, weights: [{ pos: 0.5, mass: 3 }] },
+            { start: 6, end: 7, lengthFactor: 1.8, weights: [{ pos: 0.5, mass: 3 }] },
+
+            // === Flying buttress-like arches ===
+            { start: 1, end: 2, lengthFactor: 1.5, weights: [] },
+            { start: 5, end: 6, lengthFactor: 1.5, weights: [] },
+
+            // === Inner structural arches ===
+            { start: 2, end: 5, lengthFactor: 1.6, weights: [{ pos: 0.5, mass: 2 }] },
         ];
 
         for (const def of chainDefs) {
@@ -1289,6 +1580,10 @@
             document.getElementById('floor-label').classList.add('hidden');
             updateStructurePanel();
         }
+
+        // Enable stone texture for the demo
+        structureOpts.stone = true;
+        document.getElementById('opt-stone').checked = true;
 
         recomputeAllChains();
         render();
